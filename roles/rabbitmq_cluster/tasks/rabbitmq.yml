@@ -1,0 +1,215 @@
+- name: Install Linux system packages.
+  yum:
+    name: ["gcc", "libffi-devel", "python3-devel", "libcurl-devel", "zlib-devel", "readline-devel", "ncurses-devel", "wget", "zip", "unzip", "telnet", "net-tools"]
+    state: "{{ state }}"
+
+- name: Disable Linux firewalld service.
+  service:
+    name: firewalld
+    state: stopped
+    enabled: no
+  
+- name: Set SELinux to disabled mode.
+  selinux:
+    policy: targeted
+    state: disabled
+
+- name: Set SELinux to disabled mode in the file.
+  lineinfile:
+    path: '/etc/selinux/config'
+    state: '{{ state }}'
+    regexp: '^SELINUX=(.*)?'
+    line: 'SELINUX=disabled'
+
+- name: Set hostname.
+  command: "hostnamectl set-hostname {{ ansible_hostname }}.localdomain"
+  run_once: true
+
+- name: Edit hosts file.
+  lineinfile:
+    path: '/etc/hosts'
+    state: '{{ state }}'
+    line: '{{ ansible_all_ipv4_addresses[0] }}  {{ ansible_nodename }}'
+    create: yes
+
+- name: Get host.
+  shell: > 
+    cat /etc/hosts > reghost.log
+  args:
+    executable: /bin/bash
+    creates: reghost.log
+  register: newhost
+  when: inventory_hostname in groups['rabbitmq_master']
+
+- local_action: "copy content='{{ newhost.stdout }}' dest=host1.txt"
+  when: inventory_hostname in groups['rabbitmq_master']
+
+- name: Get host.
+  shell: > 
+    cat /etc/hosts > reghost1.log
+  args:
+    executable: /bin/bash
+    creates: reghost1.log
+  register: newhost2
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- local_action: "copy content='{{ newhost2.stdout }}' dest=host2.txt"
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- name: Concat host file.
+  shell: >
+    ./host.sh > host.log
+  args:
+    executable: /bin/bash
+    creates: host.log
+  delegate_to: localhost
+
+- name: deploy hosts file.
+  copy:
+    src: "hosts"
+    dest: "/etc/hosts"
+    owner: "{{ owner }}"
+    group: "{{ group }}"
+    mode: "{{ fmode }}"
+
+- name: Configuring EPEL Repo.
+  yum:
+    name: epel-release
+    state: "{{ state }}"
+
+- name: Install RabbitMQ dependencies ErLang package.
+  yum:
+    name: "erlang"
+    state: "{{ state }}"
+
+- name: Install RabbitMQ-Server package.
+  yum:
+    name: "rabbitmq-server"
+    state: "{{ state }}"
+
+- name: Enable RabbitMQ-server service daemon.
+  service:
+    name: "rabbitmq-server"
+    enabled: yes
+
+- name: Deploy Linux kernel parameters for RabbitMQ requirements.
+  copy:
+    src: "files/rabbitmq-sysctl.conf"
+    dest: "/etc/sysctl.d/rabbitmq-sysctl.conf"
+    owner: "{{ owner }}"
+    group: "{{ group }}"
+    mode: "{{ fmode }}"
+
+- name: Create RabbitMQ service directory.
+  file:
+    path: "/etc/systemd/system/rabbitmq-server.service.d"
+    state: "{{ dstate }}"
+    owner: "{{ owner }}"
+    group: "{{ group }}"
+
+- name: Deploy RabbitMQ Linux OS limits contoll.
+  template:
+    src: "limits.conf.j2"
+    dest: "/etc/systemd/system/rabbitmq-server.service.d/limits.conf"
+    owner: "{{ owner }}"
+    group: "{{ group }}"
+    mode: "{{ fmode }}"
+
+- name: Systemd reload.
+  systemd:
+    daemon_reload: yes
+
+- name: Startup RabbitMQ service daemon.
+  service:
+    name: "rabbitmq-server.service"
+    state: started
+    enabled: yes
+
+- name: Deploy rabbitmq management console enable script.
+  copy:
+    src: files/rabbitmq_console.sh
+    dest: /tmp/rabbitmq_console.sh
+    owner: "{{ owner }}"
+    group: "{{ group }}"
+    mode: "{{ dmode }}"
+
+- name: Enable rabbitmq management console.
+  shell: >
+    ./rabbitmq_console.sh > enable_console.log
+  args:
+    executable: /bin/bash
+    chdir: /tmp
+    creates: enable_console.log
+
+- name: Requires a RabbitMQ restart to take effect.
+  service:
+    name: "rabbitmq-server.service"
+    state: restarted
+
+- name: Update Erlang cookie on all nodes.
+  lineinfile:
+    path: '/var/lib/rabbitmq/.erlang.cookie'
+    state: '{{ state }}'
+    regexp: '^(.*)?'
+    line: 'WELOVE<3COOKIES'
+
+- name: Restart rabbitmq-server service daemon to setup cluster nodes.
+  service:
+    name: "rabbitmq-server.service"
+    state: restarted
+
+- name: Get master IP.
+  shell: >
+    echo '{{ ansible_hostname }}'
+  args:
+    executable: /bin/bash
+  register: masternode
+  when: inventory_hostname in groups['rabbitmq_master']
+
+- name: Stop app on nodes.
+  shell: >
+    rabbitmqctl stop_app > nodes_stop_app.log
+  args:
+    executable: /bin/bash
+    creates: nodes_stop_app.log
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- name: Join rabbitmq cluster.
+  shell: >
+    rabbitmqctl join_cluster "rabbit@{{ masternode }}" > join_cluster.log
+  args:
+    executable: /bin/bash
+    creates: join_cluster.log
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- name: Start rabbitmq nodes app.
+  shell: >
+    rabbitmqctl start_app > nodes_start_app.log
+  args:
+    executable: /bin/bash
+    creates: nodes_start_app.log
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- name: Varify that the nodes have joined the cluster.
+  shell: >
+    rabbitmqctl cluster_status > cluster_status.log
+  args:
+    executable: /bin/bash
+    creates: cluster_status.log
+
+- name: Deploy create policy script.
+  copy:
+    src: files/create_rabbitmq_policy.sh
+    dest: /etc/create_rabbitmq_policy.sh
+    owner: "{{ owner }}"
+    group: "{{ group }}"
+    mode: "{{ dmode }}"
+  when: inventory_hostname in groups['rabbitmq_master']
+
+- name: Create rabbitmq policy.
+  shell: >
+    ./create_rabbitmq_policy.sh > rabbitmq_policy.log
+  args:
+    executable: /bin/bash
+    creates: rabbitmq_policy.log
+  when: inventory_hostname in groups['rabbitmq_master']

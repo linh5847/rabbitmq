@@ -1,0 +1,10 @@
+---
+state: "present"
+dstate: "directory"
+LimitNOFile: "64000"
+owner: "root"
+group: "root"
+fmode: "644"
+dmode: "755"
+user_owner: "rabbitmq"
+user_group: "rabbitmq"

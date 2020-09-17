@@ -1,0 +1,1 @@
+skipped, since reghost1.log exists
