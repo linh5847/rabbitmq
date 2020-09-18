@@ -72,6 +72,17 @@
     group: "{{ group }}"
     mode: "{{ fmode }}"
 
+- name: clean up host locally.
+  file:
+    path: "./{{ item }}"
+    state: absent
+  with_items:
+    - host1.txt
+    - host2.txt
+    - hosts
+    - host.log
+  delegate_to: localhost
+
 - name: Configuring EPEL Repo.
   yum:
     name: epel-release
