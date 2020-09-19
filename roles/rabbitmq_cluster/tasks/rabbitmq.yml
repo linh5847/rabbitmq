@@ -21,67 +21,41 @@
     regexp: '^SELINUX=(.*)?'
     line: 'SELINUX=disabled'
 
-- name: Set hostname.
-  command: "hostnamectl set-hostname {{ ansible_hostname }}.localdomain"
-  run_once: true
-
-- name: Edit hosts file.
-  lineinfile:
-    path: '/etc/hosts'
-    state: '{{ state }}'
-    line: '{{ ansible_all_ipv4_addresses[0] }}  {{ ansible_nodename }}'
-    create: yes
-
-- name: Get host.
-  shell: > 
-    cat /etc/hosts > reghost.log
-  args:
-    executable: /bin/bash
-    creates: reghost.log
-  register: newhost
-  when: inventory_hostname in groups['rabbitmq_master']
-
-- local_action: "copy content='{{ newhost.stdout }}' dest=host1.txt"
-  when: inventory_hostname in groups['rabbitmq_master']
-
-- name: Get host.
-  shell: > 
-    cat /etc/hosts > reghost1.log
-  args:
-    executable: /bin/bash
-    creates: reghost1.log
-  register: newhost2
-  when: inventory_hostname in groups['rabbitmq_node1']
-
-- local_action: "copy content='{{ newhost2.stdout }}' dest=host2.txt"
-  when: inventory_hostname in groups['rabbitmq_node1']
-
-- name: Concat host file.
+- name: Set hostname on master.
   shell: >
-    ./host.sh > host.log
+    hostnamectl set-hostname "{{ ansible_fqdn }}" > mhost.log
   args:
     executable: /bin/bash
-    creates: host.log
+    creates: mhost.log
+  when: inventory_hostname in groups['rabbitmq_master']
+
+- name: Set hostname on slave.
+  shell: >
+    hostnamectl set-hostname "{{ ansible_fqdn }}" > shost.log
+  args:
+    executable: /bin/bash
+    creates: shost.log
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- local_action: "copy content='{{ ansible_all_ipv4_addresses[1] }}     {{ ansible_fqdn }}' dest=file/host1"
+  when: inventory_hostname in groups['rabbitmq_master']
+
+- local_action: "copy content='{{ ansible_all_ipv4_addresses[1] }}     {{ ansible_fqdn }}' dest=file/host2"
+  when: inventory_hostname in groups['rabbitmq_node1']
+
+- name: Merge file.
+  assemble:
+    src: file
+    dest: myhost
   delegate_to: localhost
 
 - name: deploy hosts file.
   copy:
-    src: "hosts"
+    src: "myhost"
     dest: "/etc/hosts"
     owner: "{{ owner }}"
     group: "{{ group }}"
     mode: "{{ fmode }}"
-
-- name: clean up host locally.
-  file:
-    path: "./{{ item }}"
-    state: absent
-  with_items:
-    - host1.txt
-    - host2.txt
-    - hosts
-    - host.log
-  delegate_to: localhost
 
 - name: Configuring EPEL Repo.
   yum:
@@ -171,9 +145,10 @@
 
 - name: Get master IP.
   shell: >
-    echo '{{ ansible_hostname }}'
+    echo '{{ ansible_hostname }}' > masternode.log
   args:
     executable: /bin/bash
+    creates: masternode.log
   register: masternode
   when: inventory_hostname in groups['rabbitmq_master']
 
@@ -187,7 +162,7 @@
 
 - name: Join rabbitmq cluster.
   shell: >
-    rabbitmqctl join_cluster "rabbit@{{ masternode }}" > join_cluster.log
+    rabbitmqctl join_cluster "rabbit@{{ masternode.stdout }}" > join_cluster.log
   args:
     executable: /bin/bash
     creates: join_cluster.log
@@ -224,3 +199,13 @@
     executable: /bin/bash
     creates: rabbitmq_policy.log
   when: inventory_hostname in groups['rabbitmq_master']
+
+  - name: clean up host locally.
+  file:
+    path: "./{{ item }}"
+    state: absent
+  with_items:
+    - file/host1
+    - file/host2
+    - myhost
+  delegate_to: localhost

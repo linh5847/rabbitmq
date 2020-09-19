@@ -12,7 +12,7 @@ Vagrant.configure("2") do |config|
       machine.vm.network "forwarded_port", guest: 22, host: "228#{machine_id}"
       machine.ssh.insert_key = false
       machine.ssh.port = "228#{machine_id}"
-      machine.vm.network "private_network", ip: NET + ".1#{machine_id}"
+      machine.vm.network "private_network", ip: NET + ".2#{machine_id}"
       machine.vm.synced_folder ".", "/vagrant", :mount_options => ["dmode=755", "fmode=644"]
       machine.vm.boot_timeout = 60
 
