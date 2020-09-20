@@ -57,6 +57,16 @@
     group: "{{ group }}"
     mode: "{{ fmode }}"
 
+- name: clean up host locally.
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - file/host1
+    - file/host2
+    - myhost
+  delegate_to: localhost
+
 - name: Configuring EPEL Repo.
   yum:
     name: epel-release
@@ -199,13 +209,3 @@
     executable: /bin/bash
     creates: rabbitmq_policy.log
   when: inventory_hostname in groups['rabbitmq_master']
-
-  - name: clean up host locally.
-  file:
-    path: "./{{ item }}"
-    state: absent
-  with_items:
-    - file/host1
-    - file/host2
-    - myhost
-  delegate_to: localhost

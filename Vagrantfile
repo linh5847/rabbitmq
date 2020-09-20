@@ -34,6 +34,10 @@ Vagrant.configure("2") do |config|
           ansible.extra_vars = {
             ansible_ssh_users: 'vagrant'
           }
+          ansible.groups = {
+            "rabbitmq_master" => ["mq-node1"],
+            "rabbitmq_node1" => ["mq-node2"]
+          }
         end
       end
     end
