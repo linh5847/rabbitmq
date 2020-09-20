@@ -2,4 +2,4 @@
 # tasks file for rabbitmq_cluster
 - name: Setting up RabbitMQ.
   include_tasks: rabbitmq.yml
-  #when: ansible_os_family == 'RedHat' or ansible_distribution == 'CentOS'
+  when: ansible_os_family == 'RedHat' or ansible_distribution == 'CentOS'
